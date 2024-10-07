@@ -157,7 +157,7 @@ class TrainerFinetune(BaseEstimator):
     
 
     def test_epoch(self, dataloader: torch.utils.data.DataLoader, y_test: np.ndarray) -> PredictionMetrics:
-        
+        # FIXME: test_epoch might be better if it uses the for loop logic with n_ensembles
         y_hat = self.predict_epoch(dataloader)
         y_hat_finish = self.y_transformer.inverse_transform(y_hat)
 
