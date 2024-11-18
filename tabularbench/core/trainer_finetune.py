@@ -50,6 +50,10 @@ class TrainerFinetune(BaseEstimator):
 
 
     def train(self, x_train: np.ndarray, y_train: np.ndarray, x_val: np.ndarray, y_val: np.ndarray):
+        # FIXME: Figure out best way to seed model
+        torch.manual_seed(0)
+        np.random.seed(0)
+        random_state = np.random.default_rng(seed=0)
 
         self.preprocessor.fit(x_train, y_train)       
         x_train = self.preprocessor.transform(x_train) 
@@ -63,7 +67,8 @@ class TrainerFinetune(BaseEstimator):
             task = self.cfg.task,
             max_samples_support = self.cfg.hyperparams['max_samples_support'],
             max_samples_query = self.cfg.hyperparams['max_samples_query'],
-            split = 0.8
+            split = 0.8,
+            random_state=random_state,
         )
 
         dataset_valid = DatasetFinetune(

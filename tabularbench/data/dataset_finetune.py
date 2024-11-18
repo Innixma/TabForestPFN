@@ -108,6 +108,7 @@ def DatasetFinetuneGenerator(
     max_samples_support: int,
     max_samples_query: int,
     split: float,
+    random_state=None,
 ):
     """
     The dataset fine-tune generator is a generator that yields a dataset for fine-tuning.
@@ -118,7 +119,7 @@ def DatasetFinetuneGenerator(
         
     while True:
 
-        x_support, x_query, y_support, y_query = make_dataset_split(x=x, y=y, task=task)
+        x_support, x_query, y_support, y_query = make_dataset_split(x=x, y=y, task=task, random_state=random_state)
         n_samples_support = x_support.shape[0]
         n_samples_query = x_query.shape[0]
 

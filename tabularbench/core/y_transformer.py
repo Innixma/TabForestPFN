@@ -19,8 +19,8 @@ def create_y_transformer(y_train: np.ndarray, task: Task) -> TransformerMixin:
             return y_transformer
         case Task.CLASSIFICATION:
             # Identity
-            return FunctionTransformer(func=lambda x: x, inverse_func=lambda x: x)
-             
+            return FunctionTransformer()
+
 
 class QuantileTransformer1D(BaseEstimator, TransformerMixin):
 

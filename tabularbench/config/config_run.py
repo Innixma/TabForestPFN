@@ -15,7 +15,6 @@ from tabularbench.data.datafile_openml import OpenmlDatafile
 @dataclass
 class ConfigRun(ConfigSaveLoadMixin):
     output_dir: Path
-    device: torch.device
     seed: int
     model_name: ModelName
     task: Task
@@ -24,6 +23,7 @@ class ConfigRun(ConfigSaveLoadMixin):
     openml_dataset_name: str
     datafile_path: Path
     hyperparams: dict
+    device: torch.device = None
 
 
     @classmethod
