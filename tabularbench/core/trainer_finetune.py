@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import einops
 import numpy as np
 import torch
 from loguru import logger
 from sklearn.base import BaseEstimator
+
+from autogluon.core.metrics import Scorer
 
 from tabularbench.config.config_run import ConfigRun
 from tabularbench.core.callbacks import Checkpoint, EarlyStopping, TrackOutput
@@ -24,12 +24,13 @@ from tabularbench.results.prediction_metrics import PredictionMetrics
 class TrainerFinetune(BaseEstimator):
 
     def __init__(
-            self, 
-            cfg: ConfigRun,
-            model: torch.nn.Module,
-            n_classes: int
-        ) -> None:
-
+        self,
+        cfg: ConfigRun,
+        model: torch.nn.Module,
+        n_classes: int,
+        stopping_metric: Scorer,
+        use_best_epoch: bool = True,
+    ) -> None:
         self.cfg = cfg
         self.model = model
         self.model.to(self.cfg.device)
@@ -38,18 +39,17 @@ class TrainerFinetune(BaseEstimator):
         self.loss = get_loss(self.cfg.task)
         self.optimizer = get_optimizer(self.cfg.hyperparams, self.model)
         self.scheduler = get_scheduler(self.cfg.hyperparams, self.optimizer)
+        self.use_best_epoch = use_best_epoch
 
         self.early_stopping = EarlyStopping(patience=self.cfg.hyperparams['early_stopping_patience'])
-        self.checkpoint = Checkpoint(Path("temp_weights"), id=str(self.cfg.device))
+        self.checkpoint = Checkpoint(save_best=self.use_best_epoch, in_memory=True)
         self.preprocessor = Preprocessor( 
             use_quantile_transformer=self.cfg.hyperparams['use_quantile_transformer'],
             use_feature_count_scaling=self.cfg.hyperparams['use_feature_count_scaling'],
             max_features=self.cfg.hyperparams['n_features'],
         )
 
-        self.checkpoint.reset(self.model)
-
-
+        self.stopping_metric = stopping_metric
 
     def train(self, x_train: np.ndarray, y_train: np.ndarray, x_val: np.ndarray, y_val: np.ndarray):
         # FIXME: Figure out best way to seed model
@@ -84,13 +84,19 @@ class TrainerFinetune(BaseEstimator):
         )
 
         loader_valid = self.make_loader(dataset_valid, training=False)
-        self.checkpoint.reset(self.model)
 
-        metrics_valid = self.test_epoch(loader_valid, y_val)
-        logger.info(f"Epoch 000 | Train loss: -.---- | Train score: -.---- | Val loss: {metrics_valid.loss:.4f} | Val score: {metrics_valid.score:.4f}")
-        self.checkpoint(self.model, metrics_valid.loss)
+        if self.use_best_epoch:
+            self.checkpoint.reset()
 
-        for epoch in range(1, self.cfg.hyperparams['max_epochs']+1):
+        max_epochs = self.cfg.hyperparams['max_epochs']
+
+        if max_epochs != 0:
+            metrics_valid = self.test_epoch(loader_valid, y_val)
+            logger.info(f"Epoch 000 | Train loss: -.---- | Train score: -.---- | Val loss: {metrics_valid.loss:.4f} | Val score: {metrics_valid.score:.4f}")
+            if self.use_best_epoch:
+                self.checkpoint(self.model, metrics_valid.loss)
+
+        for epoch in range(1, max_epochs+1):
 
             dataset_train = next(dataset_train_generator)            
             loader_train = self.make_loader(dataset_train, training=True)
@@ -100,21 +106,20 @@ class TrainerFinetune(BaseEstimator):
 
             logger.info((
                 f"Epoch {epoch:03d} "
-                f"| Train loss: {metrics_train.loss:.4f} | Train score: {metrics_train.score:.4f} "
-                f"| Val loss: {metrics_valid.loss:.4f} | Val score: {metrics_valid.score:.4f}"
+                f"| Train error: {metrics_train.loss:.4f} | Train score: {metrics_train.score:.4f} "
+                f"| Val error: {metrics_valid.loss:.4f} | Val score: {metrics_valid.score:.4f}"
             ))
-
-            self.checkpoint(self.model, metrics_valid.loss)
+            if self.use_best_epoch:
+                self.checkpoint(self.model, metrics_valid.loss)
             
             self.early_stopping(metrics_valid.loss)
             if self.early_stopping.we_should_stop():
                 logger.info("Early stopping")
                 break
-
             self.scheduler.step(metrics_valid.loss)
 
-        self.checkpoint.save()
-    
+        if self.use_best_epoch and self.checkpoint.best_model is not None:
+            self.model.load_state_dict(self.checkpoint.load())
 
     def train_epoch(self, dataloader: torch.utils.data.DataLoader) -> PredictionMetrics:
 
@@ -148,7 +153,7 @@ class TrainerFinetune(BaseEstimator):
 
         y_true, y_pred = output_tracker.get()
         y_pred = self.y_transformer.inverse_transform(y_pred)
-        prediction_metrics = PredictionMetrics.from_prediction(y_pred, y_true, self.cfg.task)
+        prediction_metrics = PredictionMetrics.from_prediction(y_pred, y_true, self.cfg.task, metric=self.stopping_metric)
         return prediction_metrics
 
     
@@ -168,7 +173,7 @@ class TrainerFinetune(BaseEstimator):
         y_hat = self.predict_epoch(dataloader)
         y_hat_finish = self.y_transformer.inverse_transform(y_hat)
 
-        prediction_metrics = PredictionMetrics.from_prediction(y_hat_finish, y_test, self.cfg.task)
+        prediction_metrics = PredictionMetrics.from_prediction(y_hat_finish, y_test, self.cfg.task, metric=self.stopping_metric)
         return prediction_metrics
     
 

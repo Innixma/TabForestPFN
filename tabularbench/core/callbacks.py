@@ -2,6 +2,7 @@
 These are not callbacks, but if you look for callback most likely you look for these
 """
 
+import io
 from pathlib import Path
 
 import numpy as np
@@ -37,30 +38,51 @@ class EarlyStopping():
         return self.early_stop
 
 
-class Checkpoint():
-
-    def __init__(self, dirname: Path, id: str):
+class Checkpoint:
+    def __init__(self, dirname: Path = None, id: str = None, in_memory: bool = True, save_best: bool = True):
         self.dirname = dirname
         self.id = id
         self.curr_best_loss = np.inf
-        self.path = Path(self.dirname) / f"params_{self.id}.pt"
-        self.path.parent.mkdir(exist_ok=True)
+        self.save_best = save_best
+        self.in_memory = in_memory
+        if not self.in_memory:
+            assert self.dirname is not None
+            assert self.id is not None
+            self.path = Path(self.dirname) / f"params_{self.id}.pt"
+            self.path.parent.mkdir(exist_ok=True)
+        else:
+            self.path = None
 
+        self.buffer = io.BytesIO()
+        self.best_model = None
     
-    def reset(self, net: torch.nn.Module):
+    def reset(self):
         self.curr_best_loss = np.inf
-        self.best_model = net.state_dict()
-        
+        self.best_model = None
+        self.buffer = io.BytesIO()
 
     def __call__(self, net, loss):
-        
         if loss < self.curr_best_loss:
             self.curr_best_loss = loss
             self.best_model = net.state_dict()
-
+            if self.save_best:
+                self.save()
     
     def save(self):
-        torch.save(self.best_model, self.path)
+        if self.in_memory:
+            self.buffer = io.BytesIO()
+            torch.save(self.best_model, self.buffer)
+        else:
+            torch.save(self.best_model, self.path)
+
+    def load(self):
+        if self.in_memory:
+            # Reset the buffer's position to the beginning
+            self.buffer.seek(0)
+            return torch.load(self.buffer)
+        else:
+            return torch.load(self.path)
+
 
 
 
