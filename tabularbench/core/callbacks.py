@@ -79,7 +79,7 @@ class Checkpoint:
         if self.in_memory:
             # Reset the buffer's position to the beginning
             self.buffer.seek(0)
-            return torch.load(self.buffer)
+            return torch.load(self.buffer, weights_only=True)
         else:
             return torch.load(self.path)
 
