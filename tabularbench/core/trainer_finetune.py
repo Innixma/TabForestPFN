@@ -33,6 +33,7 @@ class TrainerFinetune(BaseEstimator):
         n_classes: int,
         stopping_metric: Scorer,
         use_best_epoch: bool = True,
+        compute_train_metrics: bool = False,
     ) -> None:
         self.cfg = cfg
         self.model = model
@@ -43,6 +44,7 @@ class TrainerFinetune(BaseEstimator):
         self.optimizer = get_optimizer(self.cfg.hyperparams, self.model)
         self.scheduler = get_scheduler(self.cfg.hyperparams, self.optimizer)
         self.use_best_epoch = use_best_epoch
+        self.compute_train_metrics = compute_train_metrics
 
         self.early_stopping = EarlyStopping(patience=self.cfg.hyperparams['early_stopping_patience'])
         self.checkpoint = Checkpoint(save_best=self.use_best_epoch, in_memory=True)
@@ -95,7 +97,14 @@ class TrainerFinetune(BaseEstimator):
 
         if max_epochs != 0:
             metrics_valid = self.test_epoch(loader_valid, y_val)
-            logger.info(f"Epoch 000 | Train loss: -.---- | Train score: -.---- | Val loss: {metrics_valid.loss:.4f} | Val score: {metrics_valid.score:.4f}")
+
+            log_msg = f"Epoch 000"
+            if self.compute_train_metrics:
+                log_msg += f" | Train errpr: -.---- | Train score: -.---- |"
+            if metrics_valid is not None:
+                log_msg += f" | Val error: {metrics_valid.loss:.4f} | Val score: {metrics_valid.score:.4f}"
+
+            logger.log(20, log_msg)
             if self.use_best_epoch:
                 self.checkpoint(self.model, metrics_valid.loss)
 
@@ -104,14 +113,16 @@ class TrainerFinetune(BaseEstimator):
             dataset_train = next(dataset_train_generator)            
             loader_train = self.make_loader(dataset_train, training=True)
             
-            metrics_train = self.train_epoch(loader_train)
+            metrics_train = self.train_epoch(loader_train, return_metrics=self.compute_train_metrics)
             metrics_valid = self.test_epoch(loader_valid, y_val)
 
-            logger.info((
-                f"Epoch {epoch:03d} "
-                f"| Train error: {metrics_train.loss:.4f} | Train score: {metrics_train.score:.4f} "
-                f"| Val error: {metrics_valid.loss:.4f} | Val score: {metrics_valid.score:.4f}"
-            ))
+            log_msg = f"Epoch {epoch:03d}"
+            if metrics_train is not None:
+                log_msg += f" | Train error: {metrics_train.loss:.4f} | Train score: {metrics_train.score:.4f}"
+            if metrics_valid is not None:
+                log_msg += f" | Val error: {metrics_valid.loss:.4f} | Val score: {metrics_valid.score:.4f}"
+
+            logger.log(20, log_msg)
             if self.use_best_epoch:
                 self.checkpoint(self.model, metrics_valid.loss)
             
@@ -124,11 +135,27 @@ class TrainerFinetune(BaseEstimator):
         if self.use_best_epoch and self.checkpoint.best_model is not None:
             self.model.load_state_dict(self.checkpoint.load())
 
-    def train_epoch(self, dataloader: torch.utils.data.DataLoader) -> PredictionMetrics:
+    def train_epoch(self, dataloader: torch.utils.data.DataLoader, return_metrics: bool = False) -> PredictionMetrics | None:
+        """
+
+        Parameters
+        ----------
+        dataloader
+        return_metrics: bool = False
+            If True, will calculate and return metrics on the train data.
+            Note that this can slow down training speed by >10%.
+
+        Returns
+        -------
+
+        """
 
         self.model.train()
-        
-        output_tracker = TrackOutput()
+
+        if return_metrics:
+            output_tracker = TrackOutput()
+        else:
+            output_tracker = None
 
         for batch in dataloader:
         
@@ -152,12 +179,16 @@ class TrainerFinetune(BaseEstimator):
             loss.backward()
             self.optimizer.step()
 
-            output_tracker.update(einops.asnumpy(y_query), einops.asnumpy(y_hat))
+            if return_metrics:
+                output_tracker.update(einops.asnumpy(y_query), einops.asnumpy(y_hat))
 
-        y_true, y_pred = output_tracker.get()
-        y_pred = self.y_transformer.inverse_transform(y_pred)
-        prediction_metrics = PredictionMetrics.from_prediction(y_pred, y_true, self.cfg.task, metric=self.stopping_metric)
-        return prediction_metrics
+        if return_metrics:
+            y_true, y_pred = output_tracker.get()
+            y_pred = self.y_transformer.inverse_transform(y_pred)
+            prediction_metrics = PredictionMetrics.from_prediction(y_pred, y_true, self.cfg.task, metric=self.stopping_metric)
+            return prediction_metrics
+        else:
+            return None
 
     def test_epoch(self, dataloader: torch.utils.data.DataLoader, y_test: np.ndarray) -> PredictionMetrics:
         # FIXME: test_epoch might be better if it uses the for loop logic with n_ensembles
