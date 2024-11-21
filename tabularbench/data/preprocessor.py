@@ -1,8 +1,11 @@
+import logging
+
 import numpy as np
-from loguru import logger
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_selection import SelectKBest
 from sklearn.preprocessing import QuantileTransformer
+
+logger = logging.getLogger(__name__)
 
 
 class Preprocessor(TransformerMixin, BaseEstimator):

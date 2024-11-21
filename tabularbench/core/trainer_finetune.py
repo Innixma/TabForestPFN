@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 import einops
 import numpy as np
 import torch
-from loguru import logger
 from sklearn.base import BaseEstimator
 
 from autogluon.core.metrics import Scorer
@@ -19,6 +20,8 @@ from tabularbench.core.y_transformer import create_y_transformer
 from tabularbench.data.dataset_finetune import DatasetFinetune, DatasetFinetuneGenerator
 from tabularbench.data.preprocessor import Preprocessor
 from tabularbench.results.prediction_metrics import PredictionMetrics
+
+logger = logging.getLogger(__name__)
 
 
 class TrainerFinetune(BaseEstimator):
