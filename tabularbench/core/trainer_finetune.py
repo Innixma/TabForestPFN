@@ -156,18 +156,6 @@ class TrainerFinetune(BaseEstimator):
         prediction_metrics = PredictionMetrics.from_prediction(y_pred, y_true, self.cfg.task, metric=self.stopping_metric)
         return prediction_metrics
 
-    
-    
-    def test(self, x_train: np.ndarray, y_train: np.ndarray, x_test: np.ndarray, y_test: np.ndarray) -> PredictionMetrics:
-
-        self.load_params(self.checkpoint.path)
-
-        y_hats = self.predict(x_train, self.y_transformer.transform(y_train), x_test)
-
-        prediction_metrics = PredictionMetrics.from_prediction(y_hats, y_test, self.cfg.task)
-        return prediction_metrics
-    
-
     def test_epoch(self, dataloader: torch.utils.data.DataLoader, y_test: np.ndarray) -> PredictionMetrics:
         # FIXME: test_epoch might be better if it uses the for loop logic with n_ensembles
         y_hat = self.predict_epoch(dataloader)
@@ -175,7 +163,6 @@ class TrainerFinetune(BaseEstimator):
 
         prediction_metrics = PredictionMetrics.from_prediction(y_hat_finish, y_test, self.cfg.task, metric=self.stopping_metric)
         return prediction_metrics
-    
 
     def predict(self, x_support: np.ndarray, y_support: np.ndarray, x_query: np.ndarray) -> np.ndarray:
         """
@@ -207,7 +194,6 @@ class TrainerFinetune(BaseEstimator):
         y_hat_finish = self.y_transformer.inverse_transform(y_hat_ensembled)
 
         return y_hat_finish
-    
 
     def predict_epoch(self, dataloader: torch.utils.data.DataLoader) -> np.ndarray:
         """
@@ -238,20 +224,6 @@ class TrainerFinetune(BaseEstimator):
 
         y_hat = np.concatenate(y_hat_list, axis=0)
         return y_hat
-
-
-    def score(self, y_hat, y):
-
-        with torch.no_grad():
-            match self.cfg.task:
-                case Task.REGRESSION:                
-                    ss_res = torch.sum((y - y_hat) ** 2)
-                    ss_tot = torch.sum((y - torch.mean(y)) ** 2)
-                    r2 = 1 - ss_res / (ss_tot + 1e-8)
-                    return r2
-                case Task.CLASSIFICATION:
-                    return (y_hat.argmax(axis=1) == y).sum() / len(y)
-            
 
     def load_params(self, path):
         self.model.load_state_dict(torch.load(path))

@@ -6,7 +6,7 @@ import scipy
 
 from autogluon.core.metrics import Scorer
 
-from tabularbench.core.enums import MetricName, Task
+from tabularbench.core.enums import Task
 
 
 @dataclass
@@ -14,7 +14,7 @@ class PredictionMetrics:
     task: Task
     loss: float
     score: float
-    metrics: dict[MetricName, float]
+    metrics: dict[str, float]
 
     @classmethod
     def from_prediction(cls, y_pred: np.ndarray, y_true: np.ndarray, task: Task, metric: Scorer) -> Self:
